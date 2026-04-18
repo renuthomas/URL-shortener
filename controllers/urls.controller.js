@@ -36,7 +36,7 @@ const shortenURL=async(req,res)=>{
             client.release();
         }
     }else{
-        res.status(400).json({message:"It is an invalid URL"})
+        res.status(400).json({message:"It is an invalid URL. Please provide a valid URL with http:// or https://"});
     }
 
 }
