@@ -1,5 +1,8 @@
 const base62Digits ="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const base62encoding=(number)=>{
+    if(typeof number!=='number' || !Number.isInteger(number) || number<1){
+        throw new Error(`Invalid input: expected a positive integer, got ${number}`);
+    }
     let remainder=0;
     let base62="";
     while(number>0){
@@ -23,6 +26,7 @@ const base62decoding=(text)=>{
 // console.log(base62encoding(1));
 // console.log(base62encoding(125));
 // console.log(base62encoding(3521614606208));
+// console.log(base62encoding(Infinity));
 
 export {base62decoding,base62encoding};
 
