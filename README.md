@@ -33,10 +33,8 @@ Create a `.env` file:
 
 ```
 PORT=3000  
-DB_URL=<your-database-url>  
-REDIS_URL=<your-redis-url>  
-RATE_LIMIT=10  
-WINDOW_SIZE=60  
+DB_PASSWORD=<your-database-password>  
+REDIS_PASSWORD=<your-redis-password>  
 ```
 
 ### 4. Start Required Services
