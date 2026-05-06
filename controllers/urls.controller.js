@@ -4,10 +4,12 @@ import { base62encoding } from "../utils/base62.utils.js";
 import redisClient from "../utils/redis/redis.utils.js";
 import Cursor from "pg-cursor";
 import { Worker } from "worker_threads";
+import { WorkerPool } from "./workerPool.js";
 import crypto from "crypto";
 
 
 const clickBuffer=[];
+const workerProcessPool=new WorkerPool("./controllers/hashWorker.js");
 
 const shortenURL=async(req,res)=>{
     const {originalUrl}=req.body;
@@ -200,32 +202,18 @@ const bulkExport = async (req, res) => {
             return res.status(404).json({ message: 'No data found for provided codes' });
         }
 
-        // Offload to Worker
-        const worker = new Worker("./controllers/hashWorker.js", { workerData: bulkData });
+        // Offload to worker using worker pool
+        const hashResult=await workerProcessPool.runTask(bulkData);
 
-        worker.on('message', (result) => {
-            client.release();
-            res.status(200).json({ 
+        if(hashResult){
+            return res.status(200).json({ 
                 message: 'Export successful', 
-                hash: result.sha256 
+                hash: hashResult.sha256 
             });
-        });
-
-        worker.on('error', (err) => {
-            console.error('Worker Error:', err);
-            client.release();
-            res.status(500).json({ message: 'Worker processing failed' });
-        });
-
-        worker.on('exit', (code) => {
-            if (code !== 0 && !res.headersSent) {
-                client.release();
-                res.status(500).json({ message: 'Worker exited unexpectedly' });
-            }
-        });
+        }
 
     } catch (error) {
-        console.error('Database error:', error);
+        console.error(' Error:', error);
         client.release();
         if (!res.headersSent) {
             res.status(500).json({ message: 'Internal server error' });
