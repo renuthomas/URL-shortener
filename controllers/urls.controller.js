@@ -2,6 +2,8 @@ import {pool} from "../utils/database.utils.js";
 import { isURLValid } from "../utils/testUrls.utils.js";
 import { base62encoding } from "../utils/base62.utils.js";
 import redisClient from "../utils/redis/redis.utils.js";
+import Cursor from "pg-cursor";
+import { Worker } from "worker_threads";
 import crypto from "crypto";
 
 
@@ -82,10 +84,10 @@ const getURL=async(req,res)=>{
         console.error('Database error:',err);
         return res.status(500).json({message:'Internal server error'});
     }finally{
-
         client.release();
     }
 }
+
 
 const analytics = async (req, res) => {
     const { shortCode } = req.params;
@@ -118,6 +120,120 @@ const analytics = async (req, res) => {
     }
 };
 
+const downloadAnalytics=async(req,res)=>{
+    const {shortCode}=req.params;
+
+    const shortCodeRegex=/^[a-zA-Z0-9]{1,12}$/gm;
+    if(!shortCodeRegex.test(shortCode)){
+        return res.status(400).json({message:'Invalid short code format'});
+    }
+
+    const client=await pool.connect();
+    try {
+        const result=await client.query("SELECT id from urls where short_code=$1",[shortCode]);
+        const urlId=result?.rows[0]?.id;
+
+        if (!urlId) {
+            return res.status(404).json({ message: 'Short code not found' });
+        }
+        
+        const cursor = client.query(new Cursor('SELECT clicked_at, referrer, ip_hash FROM clicks WHERE url_id = $1', [urlId])); 
+
+        res.setHeader('Content-Type','text/csv');
+        res.attachment("Analytics_Data.csv");
+
+        const csvHeader="clicked_at,referrer,ip_hash"+"\n";
+        res.write(csvHeader);
+        
+        const readRows=async()=>{
+            const rows=await cursor.read(100);
+            if(rows.length===0){
+                cursor.close();
+                client.release();
+                return res.end();
+            } 
+            const csvChunks=rows.map(r=>Object.values(r).join(",")).join("\n")+"\n";
+            res.write(csvChunks);
+            await readRows();
+
+        }
+
+        await readRows();
+    } catch (error) {
+        console.error('Database error:',error);
+        client.release();
+        return res.status(500).json({message:'Internal server error'});
+    }
+}
+
+const bulkExport = async (req, res) => {
+    const { shortCode } = req.body;
+    const bulkData = [];
+    let client;
+
+    try {
+        client = await pool.connect();
+
+        for (const code of shortCode) {
+            const result = await client.query("SELECT id FROM urls WHERE short_code = $1", [code]);
+            const urlId = result.rows[0]?.id;
+
+            if (!urlId) {
+                return res.status(404).json({ message: 'Short code not found' });
+            }
+
+            const cursor = client.query(new Cursor('SELECT clicked_at, referrer, ip_hash FROM clicks WHERE url_id = $1', [urlId]));
+
+            let rows;
+            do {
+                rows = await cursor.read(100);
+                if (rows.length > 0) {
+                    const dataChunks = rows.map(r => Object.values(r).join(","));
+                    bulkData.push(...dataChunks); // Flatten the chunks into bulkData
+                }
+            } while (rows.length > 0);
+            
+            await cursor.close();
+        }
+
+        if (bulkData.length === 0) {
+            return res.status(404).json({ message: 'No data found for provided codes' });
+        }
+
+        // Offload to Worker
+        const worker = new Worker("./controllers/hashWorker.js", { workerData: bulkData });
+
+        worker.on('message', (result) => {
+            client.release();
+            res.status(200).json({ 
+                message: 'Export successful', 
+                hash: result.sha256 
+            });
+        });
+
+        worker.on('error', (err) => {
+            console.error('Worker Error:', err);
+            client.release();
+            res.status(500).json({ message: 'Worker processing failed' });
+        });
+
+        worker.on('exit', (code) => {
+            if (code !== 0 && !res.headersSent) {
+                client.release();
+                res.status(500).json({ message: 'Worker exited unexpectedly' });
+            }
+        });
+
+    } catch (error) {
+        console.error('Database error:', error);
+        client.release();
+        if (!res.headersSent) {
+            res.status(500).json({ message: 'Internal server error' });
+        }
+    }
+};
+
+
 const flushClickBuffer=async()=>{
     if(clickBuffer.length==0) return;
     const toFlush = clickBuffer.splice(0, clickBuffer.length);
@@ -137,5 +253,4 @@ const flushClickBuffer=async()=>{
 setInterval(flushClickBuffer,2000);
 
 
-
-export {shortenURL,getURL,analytics};
+export {shortenURL,getURL,analytics,downloadAnalytics,bulkExport};
