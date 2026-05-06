@@ -16,7 +16,8 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "ioredis": "^5.10.1",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "pg-cursor": "^2.19.0"
   },
   "devDependencies": {
     "autocannon": "^8.0.0",
