@@ -8,7 +8,6 @@ import crypto from "crypto";
 const clickBuffer=[];
 
 const shortenURL=async(req,res)=>{
-    console.log("in here");
     const {originalUrl}=req.body;
     
     if(isURLValid(originalUrl)){
@@ -27,7 +26,7 @@ const shortenURL=async(req,res)=>{
             } catch (rollbackError) {
                 console.error('Rollback failed:',rollbackError);
             }
-            if(error.code === '23505'){
+            if(error?.code === '23505'){
                 res.status(409).json({message:'Alias already exists'});
                 return;
             }
@@ -36,9 +35,8 @@ const shortenURL=async(req,res)=>{
             client.release();
         }
     }else{
-        res.status(400).json({message:"It is an invalid URL. Please provide a valid URL with http:// or https://"});
+        res.status(400).json({message:"It is an invalid URL. Please provide a valid URL which begins with http:// or https://"});
     }
-
 }
 
 const getURL=async(req,res)=>{
